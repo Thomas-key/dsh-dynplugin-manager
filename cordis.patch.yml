@@ -1,0 +1,4 @@
+# dsh-dynplugin-manager bundle patch — registers the plugin row in the profile.
+- insert:
+    - id: dynplugin-manager
+      name: dsh-dynplugin-manager
