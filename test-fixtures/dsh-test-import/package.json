@@ -1,0 +1,8 @@
+{
+  "name": "dsh-test-import",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Minimal import-using plugin to verify loader-channel loading of community-style npm plugins",
+  "main": "index.js",
+  "license": "MIT"
+}
