@@ -1,7 +1,7 @@
 {
   "name": "dsh-dynplugin-manager",
-  "version": "0.1.0",
-  "description": "Manage DSH dynamic plugins (Dynamic Cordis Plugins): scan directories, browse, and load via /dynload slash command. Community gap — self-built.",
+  "version": "0.3.0",
+  "description": "Manage DSH dynamic plugins (Dynamic Cordis Plugins): built-in discovery (runner managed dir + profile node_modules), install dialog (local dir / GitHub / npm, link or copy), auto-routing /dynload (runner session-scoped vs loader persistent insert-row), quality gates with verify-before-persist, and full lifecycle commands (/dynunmount, /dynuninstall).",
   "keywords": [
     "deepseek-harness",
     "dsh",

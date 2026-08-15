@@ -1,18 +1,23 @@
 # dsh-dynplugin-manager
 
-> Manage DSH dynamic plugins (Dynamic Cordis Plugins): scan directories, browse, load. Community gap — self-built plugin.
+> Manage DSH dynamic plugins (Dynamic Cordis Plugins): built-in discovery, install dialog, loading. Community gap — self-built plugin.
 
-DSH dynamic plugins (`cordis_define` / `cordis_run`) are **session-scoped**: they live in the current session and are lost when the process restarts. Officially they are only reachable through agent tools (model-invoked) — **no human-operable UI exists**. This plugin fills that gap:
+DSH dynamic plugins have two load channels:
 
-- **Settings page "动态插件" (Dynamic Plugins)**: manage scan directories (add multiple), browse scanned plugins (name + description + README), open plugin source directories
-- **Slash command `/dynload <name>`**: load a dynamic plugin directly in any session, without going through an agent
-- **Read-only management**: the settings page only browses; loading always happens via the slash command
+- **runner channel** (`cordis_define` / `cordis_run`): **session-scoped**; code runs in a vm sandbox (no import/require) and is lost on process restart — self-contained plugins (web-access's function-body shape) go here
+- **loader channel** (insert row + official patch watcher): **persistent**; community npm plugins (real `import`s) go here — an insert row in `cordis.patch.yml` is applied live by the official watcher, no restart
+
+Officially, dynamic plugins are only reachable through agent tools — **no human-operable UI exists**. This plugin fills the gap:
+
+- **Settings page "动态插件" (Dynamic Plugins)**: built-in discovery (runner managed dir + profile node_modules non-bundle packages), live state badges (loaded / idle / failed+reason / needs-deps / unbuilt), loader cards with **disable/uninstall** buttons, install-dialog candidates carry install state (loaded / installed / not installed)
+- **Install dialog**: local dir / GitHub repo / npm package sources → scan → per-plugin install mode (link/copy) → instant result → one-click mount
+- **Slash commands**: `/dynload <name>` (auto-routing load), `/dynunmount` (disable), `/dynuninstall` (full removal)
 
 ## Install
 
 ### ⚠️ Name collision warning
 
-An npm package with the same name may exist or appear later (published by someone else). Installing by bare npm name may pull the wrong package. Always install from this repository explicitly:
+An npm package with the same name may exist. Always install from this repository explicitly:
 
 ```sh
 # from GitHub
@@ -24,97 +29,69 @@ dsh plugin --profile web add -w ./dsh-dynplugin-manager
 
 ### 1. Install the runtime dependency (required!)
 
-The plugin is installed by **link** (the profile references this directory), so Node resolves `import`s from the directory itself. The runtime dependency `@deepseek-ai/dsh-tools` is **not** committed (it lives in `node_modules/`, git-ignored) — you must install it in the checkout first, or `dsh web` **fails to start** with `ERR_MODULE_NOT_FOUND`:
+The plugin is installed by **link**, so Node resolves `import`s from the directory itself. `@deepseek-ai/dsh-tools` is **not** committed (in `node_modules/`, git-ignored) — install it in the checkout first, or `dsh web` **fails to start**:
 
 ```sh
 cd dsh-dynplugin-manager
-npm install          # installs @deepseek-ai/dsh-tools into ./node_modules
+npm install
 cd ..
 ```
 
-> `peerDependencies` (`@deepseek-ai/cordis`, `react`) are provided by the DSH host — do not install them locally.
+> `peerDependencies` (`@deepseek-ai/cordis`, `react`) are provided by the DSH host — do not install locally.
 
 ### 2. Add the plugin
 
 ```sh
-dsh plugin --profile web add -w ./dsh-dynplugin-manager   # local install (link)
+dsh plugin --profile web add -w ./dsh-dynplugin-manager
 ```
 
-After restarting `dsh web`: Settings → Dynamic Plugins → add a scan directory → type `/dynload <plugin-name>` (or `/dyn-<plugin-name>`) in a session.
+Restart `dsh web` → Settings → Dynamic Plugins.
 
-## Scan spec (important)
+## Plugin discovery (built-in, no directory config)
 
-The scanner only looks **one level deep**: every **first-level subdirectory** of a user-specified directory.
+| Source | Location | Notes |
+|---|---|---|
+| runner managed dir | `~/.dsh/dynplugin-manager/plugins/` | self-contained plugins install here (dialog "install to managed dir"); listed after restart (loading stays session-scoped) |
+| profile node_modules | `~/.dsh/profiles/<profile>/node_modules/` | non-bundle packages whose entry exports `apply` appear automatically (link or npm installed) |
 
-### Rule: package.json required
+## Install dialog
 
-For a folder to be recognized as a dynamic plugin, it **must contain `package.json`**; otherwise it is skipped (not scanned, not shown).
+**Install Plugin** button → pick a source:
 
-```text
-scan-dir/
-├── web-access/          ← ✓ has package.json, it's a plugin
-│   ├── package.json
-│   ├── plugin/index.js  ← code body
-│   └── README.md
-├── random-folder/       ← ✗ no package.json, skipped
-│   └── index.js
-└── plain-project/       ← ✗ no package.json, skipped
-```
+| Source | Scan | Install modes |
+|---|---|---|
+| Local dir | the dir itself or first-level subdirs | loader: **link** (edits apply after restart) / **copy** (independent copy; reinstall to pick up source edits); runner: managed-dir copy |
+| GitHub repo | zip download to `~/.dsh/dynplugin-manager/cache/` → extract → scan (monorepo supported) | same as local dir (copy semantics) |
+| npm package | registry metadata → single-package card | copy install |
 
-### Required package.json fields
+The dialog **blocks other input** while installing; results show per candidate (failures include the reason and a manual command); loader plugins can be **mounted immediately** (verify-before-persist: real import + apply must pass before the insert row is written — failures leave zero residue).
 
-| Field | Requirement |
-|---|---|
-| `name` | **Required.** A package.json without `name` is invalid and skipped |
-| `description` | Optional. Shown as the plugin description when present; empty otherwise |
-| `dsh.dynamic.host` | **Required.** Path to the code-body file (relative to the package.json directory). The scanner **never guesses** where the code body is — it only trusts this declaration |
+## Loading & lifecycle
 
-### Required package.json template
+**Settings buttons (loader plugins)**: disable (remove insert row, live, package kept) / uninstall (full removal). **Runner plugins stay session-scoped** — no buttons in the list; load with `/dynload` in a session and stop them in the official dynamic-plugin panel.
 
-```json
-{
-  "name": "my-plugin",
-  "description": "One-line description (optional)",
-  "dsh": {
-    "dynamic": {
-      "host": "plugin/index.js",
-      "client": "plugin/client.js"
-    }
-  }
-}
-```
+**Slash commands**:
 
-- `host` required: points to the plugin code body (plain JavaScript function body ending in `return { apply(ctx) {...} }` — i.e. the official `cordis_define` `code.host`)
-- `client` optional: points to the client-half code body (the `code.client`); omit for host-only plugins
+| Command | Action | Persistence |
+|---|---|---|
+| `/dynload <name>` | auto-route: self-contained → runner session-scoped; import-using → loader persistent mount | runner session / loader persistent |
+| `/dynunmount <name>` | loader: remove insert row (disable); runner: delete managed copy | reversible |
+| `/dynuninstall <name>` | full removal: row + `dsh plugin remove` (pnpm reference counting keeps shared deps) + managed copy + records | dependency graph clean; `.pnpm` physical residue can be reclaimed manually with `dsh plugin --profile web prune` (never auto-prune — it would delete user-installed packages) |
 
-> A folder without `dsh.dynamic.host` is **not a plugin** and the scanner will not load it. For plugins cloned from the community whose package.json lacks this field, add it manually (see the template above) and it becomes scannable.
+## Plugin shapes
 
-> For a plugin folder without package.json: **create one manually** — `name` + `dsh.dynamic.host` is the minimum for it to be scanned.
-
-### Name-collision disambiguation
-
-Within the full scan scope (all added directories), the display name comes from `package.json` `name`. On collision:
-
-1. The first scanned keeps its original name
-2. Colliding ones **prepend parent folder names level by level**: `test2/插件1` (folder levels joined with `/`)
-3. If collision persists all the way up to the drive root → it is the same file (same name + same path), treated as a duplicate and shown once
-
-```text
-c:/user/test1/插件1/package.json       → display name: 插件1
-c:/user/test1/test2/插件1/package.json  → display name: test2/插件1 (because 插件1 is taken)
-```
-
-### Code-body location
-
-`/dynload <name>` reads **only** the files declared by `dsh.dynamic.host` / `dsh.dynamic.client` — no guessing. Before loading, the official precheck (syntax compile + plugin-shape validation) still runs; on failure the load errors out with the reason.
+- **Self-contained (runner)**: the file is a function body (no import/export, top-level `return { apply }`) — the vm sandbox executes it directly; session-scoped; errors never harm DSH
+- **Import-using (loader)**: the entry uses the module system — must be installed (quality gate checks dependency resolvability); mounted only after an in-memory pre-execution passes; **any verification failure writes nothing** (fail-closed)
+- **needs-deps**: code imports bare packages the package.json does not declare → blocked with the exact import list; declare them and rescan
+- **unbuilt**: entry file missing (e.g. un-compiled TS) → disabled in the dialog; build first
 
 ## Difference from the same-named package
 
-There is already a `dsh-plugin-manager` on npm (author hrhgit) — that one manages **bundle plugins** (Loader-entry enable/disable, persisted to cordis.patch.yml). This plugin manages **dynamic plugins** (session-scoped, code-body loading). Different targets, they can coexist.
+There is already a `dsh-plugin-manager` on npm (author hrhgit) — that one manages **bundle plugins** (Loader-entry enable/disable, persisted to cordis.patch.yml). This plugin manages **dynamic plugins** (runner session loading + loader persistent mounting). Different targets, they can coexist.
 
 ## Maintenance status
 
-This plugin was authored by **deepseek-v4-flash** (an AI agent). If this notice has not been removed, the author does not actively maintain this plugin — it was built to fill the gap of "DSH dynamic plugins have no human-operable UI" and works as-is. No updates are planned as long as it keeps working. Forks and PRs are welcome.
+This plugin was authored by **deepseek-v4-flash** (an AI agent). If this notice has not been removed, the author does not actively maintain this plugin. Forks and PRs are welcome.
 
 ## License
 

@@ -1,18 +1,23 @@
 # dsh-dynplugin-manager
 
-> 管理 DSH 动态插件（Dynamic Cordis Plugins）：指定目录扫描、浏览、加载。社区空白，自研插件。
+> 管理 DSH 动态插件（Dynamic Cordis Plugins）：内置发现、安装弹窗、加载。社区空白，自研插件。
 
-DSH 的动态插件（`cordis_define` / `cordis_run`）是**会话级**机制：存在于当前会话，进程重启后失效。官方只有 agent 工具（模型才能调用），**没有人类可操作的界面**。本插件补齐这个空缺：
+DSH 动态插件有两条加载通道：
 
-- **设置页"动态插件"**：管理扫描目录（可添加多个）、浏览扫描到的插件（名称 + 描述 + README）、打开插件源目录
-- **斜杠命令 `/dynload <name>`**：在任意会话直接加载动态插件，不经过 agent
-- **只读管理**：管理页只浏览，加载一律走斜杠命令
+- **runner 通道**（`cordis_define` / `cordis_run`）：**会话级**，代码在 vm 沙箱执行（禁 import/require），进程重启后失效——自包含插件（如 web-access 的函数体形态）走这里
+- **loader 通道**（insert 行 + 官方 patch watcher）：**持久**，社区 npm 插件形态（正常 `import`）走这里——写 `cordis.patch.yml` 由官方 watcher 热挂载、免重启
+
+官方只有 agent 工具（模型才能调用），**没有人类可操作的界面**。本插件补齐：
+
+- **设置页"动态插件"**：内置发现（runner 托管目录 + profile 已安装的非 bundle 包），状态徽标（已加载/未加载/加载失败+原因/缺依赖声明/未构建），loader 插件卡片带**停用/卸载**按钮，安装弹窗候选带安装状态（已加载/已安装/未安装）
+- **安装弹窗**：本地目录 / GitHub 仓库 / npm 包三种来源 → 扫描 → 逐插件选安装方式（link/copy）→ 安装结果即时反馈 → 一键挂载
+- **斜杠命令**：`/dynload <插件名>`（自动分流加载）、`/dynunmount`（停用）、`/dynuninstall`（彻底卸载）
 
 ## 安装
 
 ### ⚠️ 同名包警告
 
-npm 上可能已存在或将来出现**同名包**（其他作者发布）。直接按裸包名安装可能装到错误的包。请始终显式指定本仓库：
+npm 上可能已存在同名包。请始终显式指定本仓库：
 
 ```sh
 # 从 GitHub 安装
@@ -24,107 +29,69 @@ dsh plugin --profile web add -w ./dsh-dynplugin-manager
 
 ### 第 1 步：安装运行时依赖（必须！）
 
-本插件以 **link 方式**安装（profile 引用本地目录），Node 从**目录自身**解析 `import`。运行时依赖 `@deepseek-ai/dsh-tools` **不会随仓库分发**（它在 `node_modules/`，被 .gitignore 排除）——**必须先**在本地仓库装好，否则 `dsh web` **启动即崩**，报 `ERR_MODULE_NOT_FOUND`：
+本插件以 **link 方式**安装（profile 引用本地目录），Node 从**目录自身**解析 `import`。运行时依赖 `@deepseek-ai/dsh-tools` **不会随仓库分发**（在 `node_modules/`，被 .gitignore 排除）——**必须先**在本地仓库装好，否则 `dsh web` **启动即崩**：
 
 ```sh
 cd dsh-dynplugin-manager
-npm install          # 把 @deepseek-ai/dsh-tools 装进 ./node_modules
+npm install
 cd ..
 ```
 
-> `peerDependencies`（`@deepseek-ai/cordis`、`react`）由 DSH 宿主提供——不需要本地安装。
+> `peerDependencies`（`@deepseek-ai/cordis`、`react`）由 DSH 宿主提供，不需要本地安装。
 
 ### 第 2 步：添加插件
 
 ```sh
-dsh plugin --profile web add -w ./dsh-dynplugin-manager   # 本地安装（link）
+dsh plugin --profile web add -w ./dsh-dynplugin-manager
 ```
 
-重启 `dsh web` 后：设置 → 动态插件 → 添加扫描目录 → 会话里输入 `/dynload <插件名>`（或 `/dyn-<插件名>`）。
+重启 `dsh web` 后：设置 → 动态插件。
 
-## 扫描规范（重要）
+## 插件发现（内置，无需配置目录）
 
-扫描器**只扫一层**：用户指定目录下的每一个**第一层子文件夹**。
+| 来源 | 位置 | 说明 |
+|---|---|---|
+| runner 托管目录 | `~/.dsh/dynplugin-manager/plugins/` | 自包含插件安装到这里（弹窗「安装到托管目录」），重启后仍在列表（加载是会话级） |
+| profile 已安装包 | `~/.dsh/profiles/<profile>/node_modules/` | 非 bundle + 入口导出 `apply` 的包自动出现（link 或 npm 安装均可） |
 
-### 判定：必须有 package.json
+## 安装弹窗
 
-一个文件夹要被识别为动态插件，**必须包含 `package.json`**，否则直接跳过（不扫描、不显示）。
+**安装插件** 按钮 → 选择来源：
 
-```text
-扫描目录/
-├── web-access/          ← ✓ 有 package.json，是插件
-│   ├── package.json
-│   ├── plugin/index.js  ← 代码体
-│   └── README.md
-├── 随便放的文件夹/       ← ✗ 没有 package.json，跳过
-│   └── index.js
-└── 普通项目/            ← ✗ 没有 package.json，跳过
-```
+| 来源 | 扫描方式 | 安装方式 |
+|---|---|---|
+| 本地目录 | 目录本身或一层子目录 | loader：**link**（改源码重启即生效）/ **copy**（独立副本，改源码需重装）；runner：托管目录复制 |
+| GitHub 仓库 | 下载 zip 到 `~/.dsh/dynplugin-manager/cache/` → 解压 → 扫描（支持 monorepo） | 同本地目录（copy 语义） |
+| npm 包 | registry 元数据 → 单包卡片 | copy 安装 |
 
-### package.json 必要字段
+安装时弹窗**阻塞其他输入**；完成后显示结果（失败给出原因 + 手动命令），loader 插件可**立即挂载**（验证先于写入：真实 import + apply 通过才写 insert 行，失败零残留）。
 
-| 字段 | 要求 |
-|---|---|
-| `name` | **必须**。没有 `name` 的 package.json 视为无效，跳过 |
-| `description` | 可选。有则作为插件描述显示；没有则留空 |
-| `dsh.dynamic.host` | **必须**。代码体文件路径（相对 package.json 所在目录），扫描器**不猜测**代码体位置，只认此声明 |
+## 加载与生命周期
 
-### package.json 必填模板
+**设置页按钮（loader 插件）**：停用（删 insert 行，实时生效，包保留）/ 卸载（彻底移除）。**runner 插件保持会话级**——列表无按钮，请在会话中用 `/dynload` 加载、官方动态插件面板停止。
 
-```json
-{
-  "name": "my-plugin",
-  "description": "一句话描述（可选）",
-  "dsh": {
-    "dynamic": {
-      "host": "plugin/index.js",
-      "client": "plugin/client.js"
-    }
-  }
-}
-```
+**斜杠命令**：
 
-- `host` 必填：指向插件代码体文件（纯 JavaScript 函数体，以 `return { apply(ctx) {...} }` 结尾，即官方 cordis_define 的 `code.host`）
-- `client` 可选：指向 client 半代码体（对应 `code.client`）；纯 host 插件省略此项
+| 命令 | 动作 | 持久性 |
+|---|---|---|
+| `/dynload <插件名>` | 自动分流：自包含 → runner 会话级；需 import → loader 持久挂载 | runner 会话级 / loader 持久 |
+| `/dynunmount <插件名>` | loader 删 insert 行（停用）；runner 删托管副本 | 可逆 |
+| `/dynuninstall <插件名>` | 彻底移除：删行 + `dsh plugin remove`（pnpm 引用计数保留共享依赖）+ 删托管副本 + 清记录 | 依赖图恢复干净；`.pnpm` 物理残留可手动 `dsh plugin --profile web prune` 回收（勿自动 prune——会误删用户手动安装的包） |
 
-> 没有 `dsh.dynamic.host` 的文件夹**不算插件**，扫描器不会加载它。从社区 clone 的插件若 package.json 没有此字段，手动补上（参考上面的模板）即可被扫描。
+## 插件形态说明
 
-> 没有 package.json 的插件文件夹：**手动创建一个**，至少写上 `name` + `dsh.dynamic.host` 即可被扫描。
-
-示例（最小可用）：
-
-```json
-{
-  "name": "my-plugin"
-}
-```
-
-> 没有 package.json 的插件文件夹：**手动创建一个**，至少写上 `name` 即可被扫描。
-
-### 名称冲突消歧
-
-同一扫描范围（所有已添加目录）内，插件显示名取自 `package.json` 的 `name`。冲突时按以下规则消歧：
-
-1. 先扫到的保持原名
-2. 冲突的**逐级加父文件夹名**：`test2/插件1`（注意：文件夹层级间用 `/`）
-3. 父文件夹加到头（盘符根）仍冲突 → 说明是同一份文件（同名同路径），按重复处理，只显示一次
-
-```text
-c:/user/test1/插件1/package.json      → 显示名：插件1
-c:/user/test1/test2/插件1/package.json → 显示名：test2/插件1（因 插件1 已被占用）
-```
-
-### 代码体定位
-
-`/dynload <name>` 加载时，**只读 `dsh.dynamic.host` / `dsh.dynamic.client` 声明的文件**，不做任何猜测。加载前仍会用官方 precheck（语法编译 + 插件形状校验）确认，校验不过则报错提示。
+- **自包含（runner）**：文件是函数体（无 import/export，顶层 `return { apply }`）——vm 沙箱直接执行，会话级，怎么报错都不影响 DSH
+- **需 import（loader）**：入口用模块系统——必须已安装（质量门检查依赖可解析），挂载前内存预执行验证，**任何验证失败都不写配置**（fail-closed）
+- **缺依赖声明**：代码 import 了裸包但 package.json 没声明 → 拦截并列出包名，补声明后重扫
+- **未构建**：入口文件缺失（如 TS 未编译）→ 置灰，先构建
 
 ## 与同名包的区别
 
-npm 上已有 `dsh-plugin-manager`（作者 hrhgit）——那是**管理 bundle 插件**（Loader 条目启停、持久化到 cordis.patch.yml）的工具。本插件管的是**动态插件**（会话级、代码体加载），二者定位不同、可共存。
+npm 上已有 `dsh-plugin-manager`（作者 hrhgit）——那是**管理 bundle 插件**（Loader 条目启停、持久化到 cordis.patch.yml）的工具。本插件管的是**动态插件**（runner 会话级加载 + loader 持久挂载）。二者定位不同、可共存。
 
 ## 维护状态
 
-本插件由 **deepseek-v4-flash**（AI agent）制作。如果这句话没有被删除，说明作者不会主动维护此插件——它是为补上"DSH 动态插件无人可操作界面"的空白而做的，能用就行，不计划更新。欢迎 fork 和 PR。
+本插件由 **deepseek-v4-flash**（AI agent）制作。如果这句话没有被删除，说明作者不会主动维护此插件。欢迎 fork 和 PR。
 
 ## License
 
