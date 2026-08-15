@@ -1,7 +1,7 @@
 {
   "name": "dsh-dynplugin-manager",
-  "version": "0.2.0",
-  "description": "Manage DSH dynamic plugins (Dynamic Cordis Plugins): scan directories, browse, load self-contained plugins via /dynload (runner channel), and mount community npm plugins via /dynmount (loader channel, insert row + official patch watcher, persistent).",
+  "version": "0.3.0",
+  "description": "Manage DSH dynamic plugins (Dynamic Cordis Plugins): scan directories, browse, load self-contained plugins via /dynload (runner channel), and mount community npm plugins via /dynload (loader channel, insert row + official patch watcher, persistent).",
   "keywords": [
     "deepseek-harness",
     "dsh",
