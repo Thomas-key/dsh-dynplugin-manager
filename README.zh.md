@@ -73,7 +73,7 @@ dsh plugin --profile web add -w ./dsh-dynplugin-manager
 |---|---|---|
 | `/dynload <插件名>` | 自动分流：自包含 → runner 会话级；需 import → loader 持久挂载 | runner 会话级 / loader 持久 |
 | `/dynunmount <插件名>` | 停用（删 insert 行，包保留） | 可逆 |
-| `/dynuninstall <插件名>` | 彻底移除：删行 + `dsh plugin remove`（pnpm 引用计数保留共享依赖）+ 删托管副本 + 清记录 | 恢复干净状态 |
+| `/dynuninstall <插件名>` | 彻底移除：删行 + `dsh plugin remove`（pnpm 引用计数保留共享依赖）+ 删托管副本 + 清记录 | 依赖图恢复干净；`.pnpm` 物理残留可手动 `dsh plugin --profile web prune` 回收（勿自动 prune——会误删用户手动安装的包） |
 
 ## 插件形态说明
 
