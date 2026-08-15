@@ -9,8 +9,8 @@ DSH 动态插件有两条加载通道：
 
 官方只有 agent 工具（模型才能调用），**没有人类可操作的界面**。本插件补齐：
 
-- **设置页"动态插件"**：内置发现（runner 托管目录 + profile 已安装的非 bundle 包 + 历史扫描目录），状态徽标（已加载/未加载/加载失败+原因/缺依赖声明/未构建）
-- **安装弹窗**：本地目录 / GitHub 仓库 / npm 包三种来源 → 扫描 → 逐插件选安装方式 → 安装结果即时反馈 → 一键挂载
+- **设置页"动态插件"**：内置发现（runner 托管目录 + profile 已安装的非 bundle 包），状态徽标（已加载/未加载/加载失败+原因/缺依赖声明/未构建），loader 插件卡片带**停用/卸载**按钮，安装弹窗候选带安装状态（已加载/已安装/未安装）
+- **安装弹窗**：本地目录 / GitHub 仓库 / npm 包三种来源 → 扫描 → 逐插件选安装方式（link/copy）→ 安装结果即时反馈 → 一键挂载
 - **斜杠命令**：`/dynload <插件名>`（自动分流加载）、`/dynunmount`（停用）、`/dynuninstall`（彻底卸载）
 
 ## 安装
@@ -53,7 +53,6 @@ dsh plugin --profile web add -w ./dsh-dynplugin-manager
 |---|---|---|
 | runner 托管目录 | `~/.dsh/dynplugin-manager/plugins/` | 自包含插件安装到这里（弹窗「安装到托管目录」），重启后仍在列表（加载是会话级） |
 | profile 已安装包 | `~/.dsh/profiles/<profile>/node_modules/` | 非 bundle + 入口导出 `apply` 的包自动出现（link 或 npm 安装均可） |
-| 历史扫描目录 | 用户自配 | 向后兼容保留 |
 
 ## 安装弹窗
 
@@ -69,10 +68,14 @@ dsh plugin --profile web add -w ./dsh-dynplugin-manager
 
 ## 加载与生命周期
 
+**设置页按钮（loader 插件）**：停用（删 insert 行，实时生效，包保留）/ 卸载（彻底移除）。**runner 插件保持会话级**——列表无按钮，请在会话中用 `/dynload` 加载、官方动态插件面板停止。
+
+**斜杠命令**：
+
 | 命令 | 动作 | 持久性 |
 |---|---|---|
 | `/dynload <插件名>` | 自动分流：自包含 → runner 会话级；需 import → loader 持久挂载 | runner 会话级 / loader 持久 |
-| `/dynunmount <插件名>` | 停用（删 insert 行，包保留） | 可逆 |
+| `/dynunmount <插件名>` | loader 删 insert 行（停用）；runner 删托管副本 | 可逆 |
 | `/dynuninstall <插件名>` | 彻底移除：删行 + `dsh plugin remove`（pnpm 引用计数保留共享依赖）+ 删托管副本 + 清记录 | 依赖图恢复干净；`.pnpm` 物理残留可手动 `dsh plugin --profile web prune` 回收（勿自动 prune——会误删用户手动安装的包） |
 
 ## 插件形态说明

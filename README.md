@@ -9,8 +9,8 @@ DSH dynamic plugins have two load channels:
 
 Officially, dynamic plugins are only reachable through agent tools — **no human-operable UI exists**. This plugin fills the gap:
 
-- **Settings page "动态插件" (Dynamic Plugins)**: built-in discovery (runner managed dir + profile node_modules non-bundle packages + legacy scan dirs), live state badges (loaded / idle / failed+reason / needs-deps / unbuilt)
-- **Install dialog**: local dir / GitHub repo / npm package sources → scan → per-plugin install mode → instant result → one-click mount
+- **Settings page "动态插件" (Dynamic Plugins)**: built-in discovery (runner managed dir + profile node_modules non-bundle packages), live state badges (loaded / idle / failed+reason / needs-deps / unbuilt), loader cards with **disable/uninstall** buttons, install-dialog candidates carry install state (loaded / installed / not installed)
+- **Install dialog**: local dir / GitHub repo / npm package sources → scan → per-plugin install mode (link/copy) → instant result → one-click mount
 - **Slash commands**: `/dynload <name>` (auto-routing load), `/dynunmount` (disable), `/dynuninstall` (full removal)
 
 ## Install
@@ -53,7 +53,6 @@ Restart `dsh web` → Settings → Dynamic Plugins.
 |---|---|---|
 | runner managed dir | `~/.dsh/dynplugin-manager/plugins/` | self-contained plugins install here (dialog "install to managed dir"); listed after restart (loading stays session-scoped) |
 | profile node_modules | `~/.dsh/profiles/<profile>/node_modules/` | non-bundle packages whose entry exports `apply` appear automatically (link or npm installed) |
-| legacy scan dirs | user-configured | kept for backward compatibility |
 
 ## Install dialog
 
@@ -69,11 +68,15 @@ The dialog **blocks other input** while installing; results show per candidate (
 
 ## Loading & lifecycle
 
+**Settings buttons (loader plugins)**: disable (remove insert row, live, package kept) / uninstall (full removal). **Runner plugins stay session-scoped** — no buttons in the list; load with `/dynload` in a session and stop them in the official dynamic-plugin panel.
+
+**Slash commands**:
+
 | Command | Action | Persistence |
 |---|---|---|
 | `/dynload <name>` | auto-route: self-contained → runner session-scoped; import-using → loader persistent mount | runner session / loader persistent |
-| `/dynunmount <name>` | disable (remove insert row, package kept) | reversible |
-| `/dynuninstall <name>` | full removal: row + `dsh plugin remove` (pnpm reference counting keeps shared deps) + managed copy + records | clean state restored |
+| `/dynunmount <name>` | loader: remove insert row (disable); runner: delete managed copy | reversible |
+| `/dynuninstall <name>` | full removal: row + `dsh plugin remove` (pnpm reference counting keeps shared deps) + managed copy + records | dependency graph clean; `.pnpm` physical residue can be reclaimed manually with `dsh plugin --profile web prune` (never auto-prune — it would delete user-installed packages) |
 
 ## Plugin shapes
 
